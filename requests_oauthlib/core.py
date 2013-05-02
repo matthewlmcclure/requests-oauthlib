@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
+import urlparse
+
 from oauthlib.common import extract_params
 from oauthlib.oauth1 import (Client, SIGNATURE_HMAC, SIGNATURE_TYPE_AUTH_HEADER)
 
@@ -49,14 +51,35 @@ class OAuth1(object):
 
         is_form_encoded = (CONTENT_TYPE_FORM_URLENCODED in content_type)
 
+        # 3.4.1.2.  Base String URI
+        #
+        #    The scheme, authority, and path of the request resource URI [RFC3986]
+        #    are included by constructing an "http" or "https" URI representing
+        #    the request resource (without the query or fragment) as follows:
+        #
+        #    ...
+        #
+        #    2.  The host and port values MUST match the content of the HTTP
+        #        request "Host" header field.
+        parsed_request_url = urlparse.urlparse(r.url)
+        parsed_host_header_url = parsed_request_url._replace(
+            netloc=r.headers['Host'])
+        signature_input_url = urlparse.urlunparse(parsed_host_header_url)
+
         if is_form_encoded or extract_params(r.body):
             r.headers['Content-Type'] = CONTENT_TYPE_FORM_URLENCODED
             r.url, r.headers, r.body = self.client.sign(
-                unicode(r.url), unicode(r.method), r.body or '', r.headers)
+                unicode(signature_input_url), unicode(r.method), r.body or '',
+                r.headers)
         else:
             # Omit body data in the signing of non form-encoded requests
             r.url, r.headers, _ = self.client.sign(
-                unicode(r.url), unicode(r.method), None, r.headers)
+                unicode(signature_input_url), unicode(r.method), None, r.headers)
+
+        parsed_signed_host_header_url = urlparse.urlparse(r.url)
+        parsed_signed_request_url = parsed_signed_host_header_url._replace(
+            netloc=parsed_request_url.netloc)
+        r.url = urlparse.urlunparse(parsed_signed_request_url)
 
         # Having the authorization header, key or value, in unicode will
         # result in UnicodeDecodeErrors when the request is concatenated
